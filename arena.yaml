@@ -1,0 +1,17 @@
+name: "officeqa-agent"
+version: "0.1.0"
+competition: "office-qa"
+
+agent:
+  type: "harness"
+  harness_name: "goose"
+  model: "openrouter/minimax/minimax-m2.7"
+  prompt_template_path: "prompts/system.j2"
+  skills_dir: "skills/"
+  mcp_dir: "mcp"
+
+  env:
+    OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
+
+environment:
+  timeout_per_task: 480

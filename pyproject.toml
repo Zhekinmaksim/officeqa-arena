@@ -1,0 +1,5 @@
+[project]
+name = "officeqa-agent"
+version = "0.1.0"
+description = "Sentient Arena OfficeQA agent with BM25 search MCP server"
+requires-python = ">=3.11"

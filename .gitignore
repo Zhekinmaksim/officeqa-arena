@@ -1,0 +1,6 @@
+.arena/
+test_corpus/
+scripts/
+__pycache__/
+*.pyc
+.env
