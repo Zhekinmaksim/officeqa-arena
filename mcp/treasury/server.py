@@ -163,25 +163,37 @@ def _get_index() -> BM25Index:
 def search_corpus(query: str, top_k: int = 10) -> str:
     """
     Search the entire Treasury Bulletin corpus for documents matching a query.
-    Returns the top_k most relevant documents with BM25 ranking.
+    Returns the top_k most relevant documents with BM25 ranking and a preview snippet.
 
     Args:
         query: Search terms (e.g. "national defense expenditures 1940")
         top_k: Number of results to return (default 10)
 
     Returns:
-        Ranked list of matching documents with filenames and relevance scores.
+        Ranked list of matching documents with filenames, scores, and content preview.
     """
     idx = _get_index()
     results = idx.search(query, top_k=min(top_k, 30))
     if not results:
         return "No matching documents found. Try different search terms or use grep_corpus for exact phrases."
 
+    query_tokens = set(_tokenize(query))
     lines = [f"Found {len(results)} relevant documents:\n"]
     for i, (name, path, score) in enumerate(results, 1):
         m = re.search(r'(\d{4})_(\d{2})', name)
         period = f" ({m.group(1)}-{m.group(2)})" if m else ""
         lines.append(f"{i}. {name}{period}  [score: {score:.1f}]")
+        # Add snippet: find first line containing query terms
+        if i <= 5:  # snippets for top 5 only
+            try:
+                with open(path, 'r', errors='replace') as f:
+                    for lineno, line in enumerate(f, 1):
+                        line_lower = line.lower()
+                        if any(t in line_lower for t in query_tokens) and '|' in line:
+                            lines.append(f"   L{lineno}: {line.rstrip()[:150]}")
+                            break
+            except:
+                pass
 
     return "\n".join(lines)
 
