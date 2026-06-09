@@ -31,10 +31,13 @@ mcp = FastMCP("treasury-search")
 # ---------------------------------------------------------------------------
 
 CORPUS_DIRS = [
+    "/app/resources",
+    "/app/resources/transformed",
     "/app/treasury_bulletins_parsed/transformed",
     "/app/corpus/transformed",
     "/app/corpus",
     "/app/data/transformed",
+    "/app/data",
     os.environ.get("CORPUS_DIR", ""),
 ]
 
@@ -187,7 +190,6 @@ def search_corpus(query: str, top_k: int = 10) -> str:
 def grep_corpus(pattern: str, max_results: int = 30) -> str:
     """
     Search for a regex pattern across ALL Treasury Bulletin documents.
-    Returns results spread across different files (max 3 per file).
     Case-insensitive.
 
     Args:
@@ -204,30 +206,23 @@ def grep_corpus(pattern: str, max_results: int = 30) -> str:
     except re.error as e:
         return f"Invalid regex: {e}"
 
-    # Collect matches, limiting per-file to spread across corpus
     matches = []
-    files_with_matches = 0
-    per_file_limit = 3
-
     for fpath in txt_files:
         fname = os.path.basename(fpath)
-        file_matches = 0
         with open(fpath, 'r', errors='replace') as f:
             for lineno, line in enumerate(f, 1):
                 if regex.search(line):
-                    if file_matches < per_file_limit:
-                        matches.append(f"{fname}:{lineno}: {line.rstrip()[:200]}")
-                    file_matches += 1
-        if file_matches > 0:
-            files_with_matches += 1
+                    matches.append(f"{fname}:{lineno}: {line.rstrip()[:200]}")
+                    if len(matches) >= max_results:
+                        break
         if len(matches) >= max_results:
             break
 
     if not matches:
         return f"No matches found for pattern: {pattern}\nTip: Try simpler terms, check spelling, or use search_corpus for keyword search."
 
-    header = f"Found matches in {files_with_matches} file(s) for '{pattern}' (showing up to {per_file_limit} per file):\n"
-    return header + "\n".join(matches[:max_results])
+    header = f"Found {len(matches)} match(es) for '{pattern}':\n"
+    return header + "\n".join(matches)
 
 
 @mcp.tool()

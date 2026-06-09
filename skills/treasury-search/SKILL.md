@@ -19,8 +19,8 @@ description: Guide for searching and extracting data from the U.S. Treasury Bull
 
 If MCP tools don't find results, use shell:
 ```bash
-grep -ri "search term" /app/corpus/ | head -30
-grep -ri "table.*SB-2" /app/corpus/treasury_bulletin_1982*.txt
+grep -ri "search term" /app/resources/ | head -30
+grep -ri "table.*SB-2" /app/resources/treasury_bulletin_1982*.txt
 ```
 
 ## Search Strategy
