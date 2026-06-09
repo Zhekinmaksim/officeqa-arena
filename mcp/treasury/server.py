@@ -85,8 +85,18 @@ def _tokenize(text: str) -> list[str]:
     return re.findall(r'[a-z0-9]+', text.lower())
 
 
+def _bigrams(tokens: list[str]) -> list[str]:
+    """Generate bigrams from token list for phrase matching."""
+    return [f"{tokens[i]}_{tokens[i+1]}" for i in range(len(tokens) - 1)]
+
+
+def _extract_years(text: str) -> set[int]:
+    """Extract 4-digit years (1900-2030) from text."""
+    return {int(y) for y in re.findall(r'(?<!\d)(19\d{2}|20[0-2]\d)(?!\d)', text)}
+
+
 class BM25Index:
-    """Lightweight BM25 index over text documents."""
+    """BM25 index with bigram support and year-boosting."""
 
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
@@ -94,13 +104,14 @@ class BM25Index:
         self.doc_paths: list[str] = []
         self.doc_names: list[str] = []
         self.doc_lens: list[int] = []
+        self.doc_years: list[set[int]] = []  # years in filename
         self.avgdl: float = 0.0
         self.N: int = 0
         self.inverted: dict[str, dict[int, int]] = defaultdict(dict)
         self.df: dict[str, int] = Counter()
 
     def build(self, corpus_dir: str):
-        """Index all .txt files in corpus_dir."""
+        """Index all .txt files in corpus_dir with unigrams and bigrams."""
         txt_files = sorted(glob.glob(os.path.join(corpus_dir, "*.txt")))
         if not txt_files:
             txt_files = sorted(glob.glob(os.path.join(corpus_dir, "**", "*.txt"), recursive=True))
@@ -110,16 +121,23 @@ class BM25Index:
 
         for idx, fpath in enumerate(txt_files):
             self.doc_paths.append(fpath)
-            self.doc_names.append(os.path.basename(fpath))
+            fname = os.path.basename(fpath)
+            self.doc_names.append(fname)
+            # Extract year from filename for year-boosting
+            self.doc_years.append(_extract_years(fname))
 
             with open(fpath, 'r', errors='replace') as f:
                 text = f.read()
 
             tokens = _tokenize(text)
+            # Add bigrams for phrase matching
+            bigrams = _bigrams(tokens)
+            all_terms = tokens + bigrams
+
             self.doc_lens.append(len(tokens))
             total_len += len(tokens)
 
-            tf = Counter(tokens)
+            tf = Counter(all_terms)
             for term, count in tf.items():
                 self.inverted[term][idx] = count
                 self.df[term] += 1
@@ -127,21 +145,40 @@ class BM25Index:
         self.avgdl = total_len / max(self.N, 1)
 
     def search(self, query: str, top_k: int = 5) -> list[tuple[str, str, float]]:
-        """Search and return top_k results as (filename, path, score)."""
+        """Search with BM25 + bigrams + year-boosting."""
         query_tokens = _tokenize(query)
         if not query_tokens:
             return []
 
+        # Generate query bigrams for phrase matching
+        query_bigrams = _bigrams(query_tokens)
+        all_query_terms = query_tokens + query_bigrams
+
+        # Extract years from query for boosting
+        query_years = _extract_years(query)
+
         scores: dict[int, float] = defaultdict(float)
 
-        for term in query_tokens:
+        for term in all_query_terms:
             if term not in self.inverted:
                 continue
             idf = math.log((self.N - self.df[term] + 0.5) / (self.df[term] + 0.5) + 1.0)
+            # Bigrams get 2x weight (phrase match is stronger signal)
+            weight = 2.0 if '_' in term else 1.0
             for doc_idx, tf in self.inverted[term].items():
                 dl = self.doc_lens[doc_idx]
                 tf_norm = (tf * (self.k1 + 1)) / (tf + self.k1 * (1 - self.b + self.b * dl / self.avgdl))
-                scores[doc_idx] += idf * tf_norm
+                scores[doc_idx] += idf * tf_norm * weight
+
+        # Year-boosting: if query mentions a year, boost docs from that year
+        if query_years:
+            for doc_idx in scores:
+                doc_yrs = self.doc_years[doc_idx]
+                if doc_yrs & query_years:
+                    scores[doc_idx] *= 1.5  # 50% boost for year match
+                # Also boost adjacent years (±2) with smaller boost
+                elif any(abs(dy - qy) <= 2 for dy in doc_yrs for qy in query_years):
+                    scores[doc_idx] *= 1.2  # 20% boost for nearby year
 
         ranked = sorted(scores.items(), key=lambda x: -x[1])[:top_k]
         return [(self.doc_names[idx], self.doc_paths[idx], score) for idx, score in ranked]
@@ -513,6 +550,81 @@ def extract_table(filename: str, start_line: int, end_line: int = 0) -> str:
 
     header = f"=== Table from {filename} (lines {start_line}-{end}) ===\n"
     return header + "\n".join(table_lines)
+
+
+@mcp.tool()
+def find_data(query: str, grep_pattern: str = "") -> str:
+    """
+    Combined search: finds the best document AND reads the relevant section in one call.
+    Saves multiple round-trips. Use this as your first tool for most questions.
+
+    Args:
+        query: Natural language search (e.g. "savings bonds sales 1960")
+        grep_pattern: Optional exact pattern to find within the best doc (e.g. "1960")
+
+    Returns:
+        The most relevant document section containing matching data.
+    """
+    idx = _get_index()
+    results = idx.search(query, top_k=5)
+    if not results:
+        return "No documents found. Try grep_corpus with different terms."
+
+    # Try each top result until we find matching content
+    for name, path, score in results:
+        try:
+            with open(path, 'r', errors='replace') as f:
+                lines = f.readlines()
+        except:
+            continue
+
+        # If grep_pattern given, find matching section
+        if grep_pattern:
+            try:
+                regex = re.compile(grep_pattern, re.IGNORECASE)
+            except:
+                regex = None
+
+            best_line = -1
+            if regex:
+                for i, line in enumerate(lines):
+                    if regex.search(line) and '|' in line:
+                        best_line = i
+                        break
+                # If no table match, try any match
+                if best_line < 0:
+                    for i, line in enumerate(lines):
+                        if regex.search(line):
+                            best_line = i
+                            break
+            if best_line < 0:
+                continue
+        else:
+            # Find first table-like section with query terms
+            query_tokens = set(_tokenize(query))
+            best_line = -1
+            for i, line in enumerate(lines):
+                if '|' in line and any(t in line.lower() for t in query_tokens):
+                    best_line = i
+                    break
+            if best_line < 0:
+                best_line = 0
+
+        # Read section around the match (go back to find table header)
+        start = max(0, best_line - 10)
+        end = min(len(lines), best_line + 40)
+
+        # Output the section
+        output = [f"=== {name} (lines {start+1}-{end}, score: {score:.1f}) ===\n"]
+        for i in range(start, end):
+            line = lines[i].rstrip()
+            if line:
+                prefix = ">>>" if i == best_line else "   "
+                output.append(f"{prefix} {i+1:5d} | {line[:200]}")
+
+        return "\n".join(output)
+
+    return f"Found docs but no matching content for: {query}. Try grep_corpus or search_corpus separately."
 
 
 # ---------------------------------------------------------------------------

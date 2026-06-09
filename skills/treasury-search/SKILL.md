@@ -6,7 +6,8 @@ description: Quick reference for Treasury Bulletin corpus search tools.
 # Treasury Search
 
 ## Tools
-- `search_corpus(query, top_k)` — BM25 ranked search, returns top docs with preview
+- `find_data(query, grep_pattern)` — **USE FIRST**: finds best doc + reads relevant section in one call
+- `search_corpus(query, top_k)` — BM25 ranked search with year-boosting and previews
 - `grep_corpus(pattern, max_results)` — Regex search across all 697 files
 - `read_document(filename, start_line, num_lines)` — Read document section
 - `search_in_document(filename, pattern)` — Find pattern within one doc

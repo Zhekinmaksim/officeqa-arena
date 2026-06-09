@@ -19,20 +19,29 @@ Write a best-guess answer EARLY to /app/answer.txt, then refine. A wrong answer 
 ## SEARCH
 
 Use MCP tools OR shell grep — whichever finds the answer fastest:
-- `search_corpus("keywords from question")` — BM25 ranked results with preview
+- `find_data("keywords", "grep_pattern")` — **BEST first choice**: finds doc + reads relevant section in ONE call
+- `search_corpus("keywords")` — BM25 ranked results with preview
 - `grep_corpus("exact phrase")` — regex across all files
 - `read_document(filename, start_line, num_lines)` — read a section
 - `search_in_document(filename, pattern)` — find within a doc
 - Shell: `grep -ri "term" /app/resources/ | head -20`
 
-Strategy: Search → Read table → Verify row/column → Python compute → Write answer.
+Strategy: find_data → Verify row/column → Python compute → Write answer.
+
+## COMMON MISTAKES TO AVOID
+
+- **Wrong column:** Tables have many year columns. Count carefully from left. Use the EXACT year from the question.
+- **Wrong row:** Similar category names exist (e.g. "Total" vs "Grand Total"). Read the FULL row label.
+- **Wrong document:** If data seems off, check an adjacent year's bulletin — it may have the same table with correct data.
+- **Units mismatch:** A table header says "in millions" but you report the raw number. Always check.
 
 ## TIPS
 
-- Adjacent-year bulletins often have historical data tables
+- Adjacent-year bulletins often have historical tables spanning multiple years
 - Column ">" means hierarchy: "1940 > Jan." = January 1940
 - Try multiple keyword variations if first search fails
 - For statistics: `python3 -c "import statistics; print(statistics.pstdev([...]))"`
 - Scoring allows 1% numeric tolerance
+- If `find_data` doesn't show enough context, use `read_document` to see more lines
 
 {{ instruction }}
