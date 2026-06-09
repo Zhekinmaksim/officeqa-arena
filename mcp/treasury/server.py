@@ -111,7 +111,7 @@ class BM25Index:
         self.df: dict[str, int] = Counter()
 
     def build(self, corpus_dir: str):
-        """Index all .txt files in corpus_dir with unigrams and bigrams."""
+        """Index all .txt files in corpus_dir with unigrams, bigrams, and table-title boosting."""
         txt_files = sorted(glob.glob(os.path.join(corpus_dir, "*.txt")))
         if not txt_files:
             txt_files = sorted(glob.glob(os.path.join(corpus_dir, "**", "*.txt"), recursive=True))
@@ -133,6 +133,15 @@ class BM25Index:
             # Add bigrams for phrase matching
             bigrams = _bigrams(tokens)
             all_terms = tokens + bigrams
+
+            # Boost table title terms (3x weight for terms in "Table X" lines)
+            for line in text.split('\n'):
+                if re.match(r'\s*Table\s+\S', line, re.IGNORECASE) and '|' not in line:
+                    title_tokens = _tokenize(line)
+                    title_bigrams = _bigrams(title_tokens)
+                    # Add title terms 2 extra times (total 3x weight)
+                    all_terms.extend(title_tokens * 2)
+                    all_terms.extend(title_bigrams * 2)
 
             self.doc_lens.append(len(tokens))
             total_len += len(tokens)
@@ -439,22 +448,20 @@ def document_info(filename: str) -> str:
         groups.append(current)
         table_count = len(groups)
 
-    # Detect table names (lines containing "Table" followed by identifier)
-    table_names = []
+    # Detect table names and their column headers
+    table_entries = []
     for i, line in enumerate(lines):
         m = re.match(r'.*\b(Table\s+\S+[\s.-]+[^\|]{5,80})', line, re.IGNORECASE)
         if m and '|' not in line:
-            table_names.append(f"  Line {i+1}: {m.group(1).strip()[:100]}")
-            if len(table_names) >= 30:
-                break
-
-    # Detect section headers
-    headers = []
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped and len(stripped) > 10 and stripped == stripped.upper() and any(c.isalpha() for c in stripped) and '|' not in stripped:
-            headers.append(f"  Line {i+1}: {stripped[:80]}")
-            if len(headers) >= 15:
+            entry = f"  Line {i+1}: {m.group(1).strip()[:100]}"
+            # Find the first pipe-delimited line after this table name (column header)
+            for j in range(i+1, min(i+10, len(lines))):
+                if '|' in lines[j] and lines[j].count('|') >= 2:
+                    cols = [c.strip() for c in lines[j].split('|') if c.strip()]
+                    entry += f"\n    Columns: {' | '.join(cols[:8])}"
+                    break
+            table_entries.append(entry)
+            if len(table_entries) >= 20:
                 break
 
     info = [
@@ -463,13 +470,9 @@ def document_info(filename: str) -> str:
         f"Tables detected: ~{table_count}",
     ]
 
-    if table_names:
-        info.append(f"\nTable names ({len(table_names)} found):")
-        info.extend(table_names)
-
-    if headers:
-        info.append(f"\nSection headers ({len(headers)} found):")
-        info.extend(headers)
+    if table_entries:
+        info.append(f"\nTables ({len(table_entries)} found):")
+        info.extend(table_entries)
 
     return "\n".join(info)
 
