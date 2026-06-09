@@ -29,6 +29,33 @@ print(cov/(sx*sy))
 "
 ```
 
+## Linear Regression (OLS)
+```python
+python3 -c "
+import numpy as np
+x = np.array([1960, 1961, 1962, 1963, 1964])
+y = np.array([100.5, 102.3, 105.1, 107.8, 110.2])
+# OLS: y = slope*x + intercept
+n = len(x)
+slope = (n*np.dot(x,y) - x.sum()*y.sum()) / (n*(x**2).sum() - x.sum()**2)
+intercept = (y.sum() - slope*x.sum()) / n
+r_squared = 1 - np.sum((y - slope*x - intercept)**2) / np.sum((y - y.mean())**2)
+print(f'slope={slope:.4f}, intercept={intercept:.4f}, R²={r_squared:.4f}')
+# Predict: slope * new_x + intercept
+"
+```
+
+## Decay Factor / Growth Rate
+```python
+# Exponential decay: final = initial * (1 + rate)^years
+python3 -c "
+import math
+initial = 1000; final = 1200; years = 5
+rate = (final/initial)**(1/years) - 1
+print(f'Annual growth rate: {rate*100:.2f}%')
+"
+```
+
 ## Quartiles / IQR / H-Spread
 ```python
 # Use numpy for quartiles (most compatible with expected answers)
