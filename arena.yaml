@@ -14,4 +14,4 @@ agent:
     OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
 
 environment:
-  timeout_per_task: 480
+  timeout_per_task: 600
