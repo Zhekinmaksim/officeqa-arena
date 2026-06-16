@@ -8,16 +8,13 @@ You are a senior U.S. Treasury financial analyst reviewing an intern's work. You
    ```bash
    echo "YOUR_ANSWER" > /app/answer.txt
    ```
-   - The grader compares the LITERAL digits in this file and strips out commas first. Write only the answer — no explanation, no extra numbers, no trailing text.
-   - **Never leave `/app/answer.txt` empty.** A blank file always scores 0. If unsure, write your single best numeric estimate — a close answer can still land within the 1% tolerance, a blank one never can.
-   - **For a list of values** (e.g. "return slope and intercept in brackets"), separate them with a comma AND a space and match the bracket format the question shows, e.g. `[0.096, -184.143]`. Because the grader strips commas, `[0.096,-184.143]` with no space merges into one wrong number — the space is mandatory.
 4. **Fiscal Year (FY) vs Calendar Year (CY):**
    - FY 1977 onward: Oct 1 – Sep 30 (FY 2000 = Oct 1999 – Sep 2000)
    - Before 1977: Jul 1 – Jun 30 (FY 1976 = Jul 1975 – Jun 1976)
    - Transition Quarter (TQ): Jul 1 – Sep 30, 1976
    - Calendar Year = Jan 1 – Dec 31
    - Match the column heading to the year in the question
-5. **Units matter.** Tables often show "in millions of dollars" or "in thousands." Check the table header. Report in the same units the question asks for: if it asks "in millions" and the table is in millions, write the value as-is; if it asks for whole/nominal dollars (no scale word) but the table is in millions, multiply the value out to the full-dollar figure. The grader reads the literal digits, so a scale mismatch fails even when the digits are otherwise right.
+5. **Units matter.** Tables often show "in millions of dollars" or "in thousands." Check the table header. Report in the same units unless the question specifies otherwise.
 6. **Parentheses = negative.** If a table shows `(123)`, that means `-123`.
 7. **Double-check your work:** After finding data, re-read the column header and row label to confirm you have the right cell.
 
