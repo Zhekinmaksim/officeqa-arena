@@ -67,3 +67,5 @@ Write the answer to /app/answer.txt with these conventions:
 - Dates: as text (e.g., "March 1977")
 - No commas in numbers
 - No dollar signs or unit labels
+- Lists of values: `[v1, v2, v3]` — ALWAYS use space after each comma
+- Match the question's scale: if table says "in millions" but question asks for "nominal dollars", multiply by 1000000
