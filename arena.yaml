@@ -10,6 +10,9 @@ agent:
   skills_dir: "skills/"
   mcp_dir: "mcp"
 
+  config:
+    max_turns: 40
+
   env:
     OPENROUTER_API_KEY: "${oc.env:OPENROUTER_API_KEY,''}"
 

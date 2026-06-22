@@ -407,6 +407,184 @@ def document_info(filename: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Table parser (clean column-aligned output from raw HTML/pipe tables)
+# ---------------------------------------------------------------------------
+
+def _parse_html_tables(html):
+    tables = []
+    for table_match in re.finditer(r'<table>(.*?)</table>', html, re.DOTALL):
+        table_html = table_match.group(1)
+        rows_raw = re.findall(r'<tr>(.*?)</tr>', table_html, re.DOTALL)
+        grid = []
+        pending = {}
+        for ri, row_html in enumerate(rows_raw):
+            cells = re.findall(r'<(th|td)(.*?)>(.*?)</(?:th|td)>', row_html, re.DOTALL)
+            row = []
+            ci = 0
+            while (ri, ci) in pending:
+                row.append(pending.pop((ri, ci)))
+                ci += 1
+            for tag, attrs, content in cells:
+                while (ri, ci) in pending:
+                    row.append(pending.pop((ri, ci)))
+                    ci += 1
+                val = re.sub(r'<[^>]+>', '', content).strip()
+                colspan = int(m.group(1)) if (m := re.search(r'colspan="(\d+)"', attrs)) else 1
+                rowspan = int(m.group(1)) if (m := re.search(r'rowspan="(\d+)"', attrs)) else 1
+                for c in range(colspan):
+                    while (ri, ci) in pending:
+                        row.append(pending.pop((ri, ci)))
+                        ci += 1
+                    row.append(val if c == 0 else "")
+                    for r in range(1, rowspan):
+                        pending[(ri + r, ci)] = val if c == 0 else ""
+                    ci += 1
+            while (ri, ci) in pending:
+                row.append(pending.pop((ri, ci)))
+                ci += 1
+            grid.append(row)
+        if grid:
+            tables.append(grid)
+    return tables
+
+
+def _parse_pipe_tables(text):
+    tables = []
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        if re.match(r'^\|[\s-]+\|', lines[i]):
+            sep_idx = i
+            header_start = sep_idx - 1
+            while header_start > 0 and '|' in lines[header_start - 1] and lines[header_start - 1].strip().startswith('|'):
+                header_start -= 1
+            header_cells = []
+            for hi in range(header_start, sep_idx):
+                cells = [c.strip() for c in lines[hi].split('|')]
+                cells = [c for c in cells if c]
+                if not header_cells:
+                    header_cells = cells
+                else:
+                    for ci in range(min(len(header_cells), len(cells))):
+                        if cells[ci] and cells[ci] != header_cells[ci]:
+                            header_cells[ci] = f"{header_cells[ci]} > {cells[ci]}"
+            grid = [header_cells]
+            j = sep_idx + 1
+            while j < len(lines) and '|' in lines[j]:
+                cells = [c.strip() for c in lines[j].split('|')]
+                cells = [c for c in cells if c or len([x for x in cells if x]) > 1]
+                if cells and cells[0] == '':
+                    cells = cells[1:]
+                if cells and cells[-1] == '':
+                    cells = cells[:-1]
+                if cells:
+                    grid.append(cells)
+                j += 1
+            if len(grid) > 1:
+                tables.append(grid)
+            i = j
+        else:
+            i += 1
+    return tables
+
+
+def _clean_cell(val):
+    v = val.strip()
+    v = re.sub(r'\s*\d+/', '', v)
+    if v.startswith('(') and v.endswith(')'):
+        v = '-' + v[1:-1]
+    v = v.rstrip(' p')
+    return v
+
+
+def _format_table(grid, table_idx):
+    if not grid:
+        return ""
+    headers = grid[0]
+    merged = list(headers)
+    data_start = 1
+    if len(grid) > 1:
+        row2 = grid[1]
+        non_empty = [c for c in row2 if c.strip()]
+        if non_empty and all(len(c) < 30 for c in non_empty):
+            numeric = sum(1 for c in non_empty if re.match(r'^[\d,.\-()$ ]+$', c.strip()))
+            if numeric < len(non_empty) / 2:
+                merged = []
+                for i in range(max(len(headers), len(row2))):
+                    h1 = headers[i].strip() if i < len(headers) else ""
+                    h2 = row2[i].strip() if i < len(row2) else ""
+                    merged.append(f"{h1} > {h2}" if h1 and h2 else h1 or h2)
+                data_start = 2
+    lines = [f"=== TABLE {table_idx + 1} ===",
+             " | ".join(h.strip() for h in merged),
+             "-" * 40]
+    for row in grid[data_start:]:
+        padded = row + [""] * (len(merged) - len(row))
+        cleaned = [_clean_cell(c) for c in padded[:len(merged)]]
+        if any(c.strip() for c in cleaned):
+            lines.append(" | ".join(c.strip() for c in cleaned))
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def parse_table(filename: str, search: Optional[str] = None) -> str:
+    """
+    Parse tables from a Treasury Bulletin document into clean, column-aligned output.
+    Much more reliable than reading raw lines — handles HTML tables, rowspan/colspan,
+    footnotes, and parentheses-as-negative. Use this instead of read_document for tables.
+
+    Args:
+        filename: The document filename (e.g. "treasury_bulletin_1941_01.txt")
+        search: Optional search term to filter rows (case-insensitive). Only matching rows are shown.
+
+    Returns:
+        Clean pipe-delimited tables with headers and aligned columns.
+    """
+    corpus_dir = _get_corpus_dir()
+    fpath = os.path.join(corpus_dir, filename)
+    if not os.path.exists(fpath):
+        candidates = glob.glob(os.path.join(corpus_dir, "**", filename), recursive=True)
+        if candidates:
+            fpath = candidates[0]
+        else:
+            return f"File not found: {filename}"
+
+    content = open(fpath, 'r', errors='replace').read()
+
+    tables = _parse_html_tables(content)
+    if not tables:
+        tables = _parse_pipe_tables(content)
+    if not tables:
+        return f"No tables found in {filename}. First 2000 chars:\n{content[:2000]}"
+
+    output = []
+    for i, grid in enumerate(tables):
+        formatted = _format_table(grid, i)
+        if search:
+            lines = formatted.split("\n")
+            header_lines = lines[:3]
+            # Match in headers OR data rows
+            header_match = any(search.lower() in h.lower() for h in header_lines)
+            matching = [l for l in lines[3:] if search.lower() in l.lower()]
+            if matching or header_match:
+                output.append("\n".join(header_lines))
+                if matching:
+                    output.extend(matching)
+                elif header_match:
+                    # Show first 10 data rows if header matches
+                    output.extend(lines[3:13])
+                output.append("")
+        else:
+            output.append(formatted)
+            output.append("")
+
+    result = "\n".join(output)
+    if not result.strip():
+        return f"No matching rows for '{search}' in {filename}"
+    return result[:8000]
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
