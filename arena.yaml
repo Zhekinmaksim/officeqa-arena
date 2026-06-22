@@ -5,7 +5,7 @@ competition: "office-qa"
 agent:
   type: "harness"
   harness_name: "goose"
-  model: "openrouter/openai/gpt-4.1"
+  model: "openrouter/anthropic/claude-sonnet-4.6"
   prompt_template_path: "prompts/system.j2"
   skills_dir: "skills/"
   mcp_dir: "mcp"
